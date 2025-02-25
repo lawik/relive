@@ -33,6 +33,12 @@ defmodule Relive.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:membrane_fake_plugin, "~> 0.11"},
+      {:membrane_audiometer_plugin, "~> 0.12"},
+      {:membrane_ffmpeg_swresample_plugin, "~> 0.20"},
+      {:membrane_portaudio_plugin, "~> 0.19"},
+      {:membrane_file_plugin, "~> 0.17"},
+      {:membrane_core, "~> 1.0"},
       {:kokoro, [github: "samrat/kokoro", override: true]},
       {:ortex, "~> 0.1"},
       {:exla, "~> 0.9"},
