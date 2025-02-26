@@ -3,6 +3,8 @@ defmodule Relive.Audio.Pipeline do
   alias Relive.Audio.VAD
   alias Relive.Audio.Timestamper
 
+  require Logger
+
   @target_sample_rate 16000
   @bitdepth 32
   @byte_per_sample @bitdepth / 8
@@ -28,8 +30,11 @@ defmodule Relive.Audio.Pipeline do
         portaudio_buffer_size: 1600
       })
       |> child(:timestamper, %Timestamper{bytes_per_second: @byte_per_second})
-      |> child(:levels, Membrane.Audiometer.Peakmeter)
-      |> child(:vad, VAD)
+      |> child(:peak_1, Membrane.Audiometer.Peakmeter)
+      |> child(:vad, %VAD{
+        fill_mode: :silence
+      })
+      |> child(:peak_2, Membrane.Audiometer.Peakmeter)
       |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
         output_stream_format: %Membrane.RawAudio{
           sample_format: :s32le,
@@ -45,29 +50,36 @@ defmodule Relive.Audio.Pipeline do
     # |> child(:output, %Membrane.PortAudio.Sink{})
     # |> child(:file, %Membrane.File.Sink{location: "/data/local.raw"})
 
-    peak_interval = round(1000 / @target_fps)
-    {[spec: spec], %{amps: [], clock_started?: false, peak_interval: peak_interval}}
+    peak_interval = round(1000 / peaks_per_second)
+
+    {[spec: spec],
+     %{amps: %{peak_1: [], peak_2: []}, clock_started?: false, peak_interval: peak_interval}}
   end
 
   @impl true
   def handle_child_notification(
         # Only grabbing one channel, simplifies things
         {:amplitudes, [amp | _]},
-        _element,
+        element,
         _context,
         state
       ) do
-    actions =
-      case state do
-        %{clock_started?: false} ->
-          # Let membrane figure out timing
-          [start_timer: {:frame, Membrane.Time.milliseconds(state.peak_interval)}]
+    if is_number(amp) do
+      actions =
+        case state do
+          %{clock_started?: false} ->
+            # Let membrane figure out timing
+            [start_timer: {{:frame, element}, Membrane.Time.milliseconds(state.peak_interval)}]
 
-        _ ->
-          []
-      end
+          _ ->
+            []
+        end
 
-    {actions, %{state | amps: [amp | state.amps], clock_started?: true}}
+      amps = Map.put(state.amps, element, [amp | state.amps[element]])
+      {actions, %{state | amps: amps, clock_started?: true}}
+    else
+      {[], state}
+    end
   end
 
   def handle_child_notification(
@@ -102,12 +114,17 @@ defmodule Relive.Audio.Pipeline do
   end
 
   @impl true
-  def handle_tick(:frame, _ctx, state) do
-    if state.amps != [] do
-      avg = Enum.sum(state.amps) / Enum.count(state.amps)
+  def handle_tick({:frame, element}, _ctx, state) do
+    amps = state.amps[element]
+
+    if amps != [] do
+      avg = Enum.sum(amps) / Enum.count(amps)
+      Logger.info("#{element}: #{avg}")
       Phoenix.PubSub.broadcast(Relive.PubSub, "amplitude", {:amp, avg})
     end
 
-    {[], %{state | amps: []}}
+    new = Map.put(state.amps, element, [])
+
+    {[], %{state | amps: new}}
   end
 end

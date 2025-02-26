@@ -1,9 +1,5 @@
 defmodule Relive do
-  @moduledoc """
-  Relive keeps the contexts that define your domain
-  and business logic.
-
-  Contexts are also responsible for managing your data, regardless
-  if it comes from the database, an external API or others.
-  """
+  def go do
+    Relive.Audio.Pipeline.start_link(peaks_per_second: 1)
+  end
 end
