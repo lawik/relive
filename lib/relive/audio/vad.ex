@@ -14,14 +14,24 @@ defmodule Relive.Audio.VAD do
     accepted_format: Membrane.RawAudio
   )
 
+  @model_url "https://raw.githubusercontent.com/snakers4/silero-vad/v4.0stable/files/silero_vad.onnx"
+
   @impl true
   def handle_init(_ctx, _mod) do
-    # using https://raw.githubusercontent.com/snakers4/silero-vad/v4.0stable/files/silero_vad.onnx
-    model =
+    model_path =
       :relive
       |> :code.priv_dir()
       |> Path.join("silero_vad.onnx")
-      |> Ortex.load()
+
+    case File.stat(model_path) do
+      {:ok, %{type: :regular}} ->
+        :ok
+
+      {:error, :enoent} ->
+        Req.get!(@model_url, into: File.stream!(model_path))
+    end
+
+    model = Ortex.load(model_path)
 
     min_ms = 100
 

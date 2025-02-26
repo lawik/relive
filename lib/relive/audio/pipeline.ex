@@ -12,8 +12,11 @@ defmodule Relive.Audio.Pipeline do
     Membrane.Pipeline.start_link(__MODULE__, opts)
   end
 
+  @default_peaks_per_second 60
+
   @impl true
-  def handle_init(_ctx, _) do
+  def handle_init(_ctx, opts) do
+    peaks_per_second = Keyword.get(opts, :peaks_per_second, @default_peaks_per_second)
     # Setup the flow of the data
     # Stream from file
     spec =
@@ -42,13 +45,13 @@ defmodule Relive.Audio.Pipeline do
     # |> child(:output, %Membrane.PortAudio.Sink{})
     # |> child(:file, %Membrane.File.Sink{location: "/data/local.raw"})
 
-    {[spec: spec], %{amps: [], clock_started?: false}}
+    peak_interval = round(1000 / @target_fps)
+    {[spec: spec], %{amps: [], clock_started?: false, peak_interval: peak_interval}}
   end
 
-  @target_fps 60
-  @fps_interval round(1000 / @target_fps)
   @impl true
   def handle_child_notification(
+        # Only grabbing one channel, simplifies things
         {:amplitudes, [amp | _]},
         _element,
         _context,
@@ -57,7 +60,8 @@ defmodule Relive.Audio.Pipeline do
     actions =
       case state do
         %{clock_started?: false} ->
-          [start_timer: {:frame, Membrane.Time.milliseconds(@fps_interval)}]
+          # Let membrane figure out timing
+          [start_timer: {:frame, Membrane.Time.milliseconds(state.peak_interval)}]
 
         _ ->
           []
@@ -77,6 +81,7 @@ defmodule Relive.Audio.Pipeline do
     {[], state}
   end
 
+  # We just ignore audiometer underruns, they are not terribly exciting
   def handle_child_notification(
         {:audiometer, :underrun},
         _element,
@@ -92,7 +97,7 @@ defmodule Relive.Audio.Pipeline do
         _context,
         state
       ) do
-    IO.inspect(notification, label: "notification")
+    IO.inspect(notification, label: "unhandled notification")
     {[], state}
   end
 

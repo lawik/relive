@@ -56,25 +56,28 @@ defmodule Relive.Audio.Timestamper do
     byte_count = IO.iodata_length(buffer.payload)
     duration = floor(byte_count / state.millisecond_bytes)
     start_ts = floor(state.processed_bytes / state.millisecond_bytes)
-    state = %{state | processed_bytes: state.processed_bytes + byte_count}
+
+    state = %{
+      state
+      | processed_bytes: state.processed_bytes + byte_count,
+        count_out: state.count_out + 1
+    }
+
     end_ts = floor(state.processed_bytes / state.millisecond_bytes)
-    metadata = buffer.metadata || %{}
 
-    out_buffer =
-      {:output,
-       %{
-         buffer
-         | metadata:
-             Map.merge(metadata, %{
-               start_ts: start_ts,
-               end_ts: end_ts,
-               duration: duration
-             })
-       }}
+    metadata =
+      buffer
+      |> Map.get(:metadata, %{})
+      |> Map.put(:start_ts, start_ts)
+      |> Map.put(:end_ts, end_ts)
+      |> Map.put(:duration, duration)
 
-    actions = [demand: {:input, 1}, buffer: out_buffer]
+    actions = [
+      demand: {:input, 1},
+      buffer: {:output, %{buffer | metadata: metadata}}
+    ]
 
-    {actions, %{state | count_out: state.count_out + 1}}
+    {actions, state}
   end
 
   @impl true
