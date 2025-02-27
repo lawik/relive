@@ -1,18 +1,12 @@
 defmodule Relive.Audio.Pipeline do
   use Membrane.Pipeline
   alias Relive.Audio.VAD
-  alias Relive.Audio.Timestamper
 
   alias Membrane.Audiometer.Peakmeter
   alias Membrane.FFmpeg.SWResample
   alias Membrane.PortAudio
 
   require Logger
-
-  @target_sample_rate 16000
-  @bitdepth 32
-  @byte_per_sample @bitdepth / 8
-  @byte_per_second @target_sample_rate * @byte_per_sample
 
   def start_link(opts) do
     Membrane.Pipeline.start_link(__MODULE__, opts)
@@ -34,28 +28,30 @@ defmodule Relive.Audio.Pipeline do
         sample_rate: 16000,
         portaudio_buffer_size: 1600
       })
-      |> child(:timestamper, %Timestamper{bytes_per_second: @byte_per_second})
       |> child(:peak_1, %Peakmeter{
         interval: Membrane.Time.milliseconds(peak_interval)
       })
       |> child(:vad, %VAD{
         filter?: true,
+        delay?: true,
+        tail?: true,
         fill_mode: :cut
       })
       |> child(:peak_2, %Peakmeter{
         interval: Membrane.Time.milliseconds(peak_interval)
       })
-      |> child(:converter, %SWResample.Converter{
-        output_stream_format: %Membrane.RawAudio{
-          sample_format: :s32le,
-          sample_rate: 44_100,
-          channels: 2
-        }
-      })
+      # |> child(:converter, %SWResample.Converter{
+      #   output_stream_format: %Membrane.RawAudio{
+      #     sample_format: :s32le,
+      #     sample_rate: 44_100,
+      #     channels: 2
+      #   }
+      # })
       # Stream data into PortAudio to play it on speakers.
-      # |> child(:output, Membrane.PortAudio.Sink)
-      # Throw it away
-      |> child(:output, Membrane.Fake.Sink.Buffers)
+      |> child(:output, Membrane.PortAudio.Sink)
+
+    # Throw it away
+    # |> child(:output, Membrane.Fake.Sink.Buffers)
 
     # |> child(:output, %Membrane.PortAudio.Sink{})
     # |> child(:file, %Membrane.File.Sink{location: "/data/local.raw"})

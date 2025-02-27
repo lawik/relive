@@ -16,6 +16,18 @@ defmodule Relive.Audio.VAD do
       default: :silence,
       description: "Create breaks in stream or pad filtered out parts with silence."
     ],
+    delay?: [
+      spec: boolean(),
+      default: true,
+      description:
+        "Delay audio by 1 chunk (typically 100ms) more when filtering to smooth out the start? Only applies if filtering. Default: true"
+    ],
+    tail?: [
+      spec: boolean(),
+      default: true,
+      description:
+        "Pass through 1 additional chunk (typically 100ms) more when filtering to smooth out the end? Only applies if filtering. Default: true"
+    ],
     notify?: [
       spec: boolean(),
       default: true,
@@ -73,8 +85,11 @@ defmodule Relive.Audio.VAD do
       run_state: init_state,
       model: model,
       bytes: bytes_per_chunk,
+      delay_buffer: nil,
+      out_buffer: nil,
       buffered: [],
-      speaking?: false
+      probability: 0.0,
+      status: {:not_speaking, 0}
     }
 
     {[], state}
@@ -93,82 +108,163 @@ defmodule Relive.Audio.VAD do
   @impl true
   def handle_buffer(
         :input,
-        %Membrane.Buffer{payload: data} = buffer,
-        %{pads: %{input: %{stream_format: stream_format}}},
+        %Membrane.Buffer{payload: data},
+        _ctx,
         state
       ) do
-    %{n: n, sr: sr, c: c, h: h} = state.run_state
     buffered = [state.buffered, data]
 
-    if IO.iodata_length(buffered) >= state.bytes do
-      data = IO.iodata_to_binary(buffered)
+    if buffer_ready?(state, buffered) do
+      {[], state}
+      |> buffer(buffered)
+      |> demand_next()
+      |> process()
+      |> clear_buffer()
+      |> evaluate()
+      |> filter()
+      |> notify()
+    else
+      {[], state}
+      |> buffer(buffered)
+      |> demand_next()
+    end
+  end
 
-      input =
-        data
-        |> Nx.from_binary(:f32)
-        |> List.wrap()
-        |> Nx.stack()
+  defp buffer({actions, state}, buffered) do
+    {actions, %{state | buffered: buffered}}
+  end
 
-      {output, hn, cn} = Ortex.run(state.model, {input, sr, h, c})
-      prob = output |> Nx.squeeze() |> Nx.to_number()
+  defp buffer_ready?(state, buffered) do
+    IO.iodata_length(buffered) >= state.bytes
+  end
 
-      run_state = %{c: cn, h: hn, n: n + 1, sr: sr}
-      state = %{state | run_state: run_state, buffered: []}
+  defp demand_next({actions, state}) do
+    {[{:demand, {:input, 1}} | actions], state}
+  end
 
-      actions =
-        [demand: {:input, 1}]
+  defp process({actions, state}) do
+    %{n: n, sr: sr, c: c, h: h} = state.run_state
+    data = IO.iodata_to_binary(state.buffered)
 
-      is_speech? = prob > state.opts.threshold
+    input =
+      data
+      |> Nx.from_binary(:f32)
+      |> List.wrap()
+      |> Nx.stack()
 
-      {change, state} =
-        cond do
-          state.speaking? and is_speech? ->
-            {nil, state}
+    {output, hn, cn} = Ortex.run(state.model, {input, sr, h, c})
+    prob = output |> Nx.squeeze() |> Nx.to_number()
 
-          state.speaking? and not is_speech? ->
-            {:stop, %{state | speaking?: false}}
+    run_state = %{c: cn, h: hn, n: n + 1, sr: sr}
+    {actions, %{state | run_state: run_state, probability: prob}}
+  end
 
-          not state.speaking? and is_speech? ->
-            {:start, %{state | speaking?: true}}
+  defp clear_buffer({actions, %{opts: %{filter?: true, delay?: true}} = state}) do
+    {actions, %{state | delay_buffer: state.out_buffer, out_buffer: state.buffered, buffered: []}}
+  end
 
-          not state.speaking? and not is_speech? ->
-            {nil, state}
-        end
+  defp clear_buffer({actions, state}) do
+    {actions, %{state | out_buffer: state.buffered, buffered: []}}
+  end
 
-      send_buffer =
-        case {is_speech?, state.opts.filter?, state.opts.fill_mode} do
-          {true, _, _} ->
-            buffer
+  defp evaluate({actions, state}) do
+    speaking? = state.probability > state.opts.threshold
 
-          {_, false, _} ->
-            buffer
+    status =
+      case {speaking?, state.status} do
+        {true, {:not_speaking, _}} ->
+          {:speaking, 0}
 
-          {false, true, :cut} ->
-            nil
+        {true, {:speaking, chunks_elapsed}} ->
+          {:speaking, chunks_elapsed + 1}
 
-          {false, true, :silence} ->
-            %{buffer | payload: RawAudio.silence(stream_format)}
-        end
+        {false, {:not_speaking, chunks_elapsed}} ->
+          {:not_speaking, chunks_elapsed + 1}
 
-      actions =
-        if change do
-          [{:notify_parent, {:speaking, change, prob}} | actions]
+        {false, {:speaking, _}} ->
+          {:not_speaking, 0}
+      end
+
+    {actions, %{state | status: status}}
+  end
+
+  defp filter({actions, %{opts: %{filter?: false}}} = state) do
+    {actions, state}
+  end
+
+  defp filter({actions, %{opts: %{delay?: delay?, tail?: tail?}} = state}) do
+    state =
+      case state.status do
+        {:not_speaking, 0} ->
+          # Just stopped speaking, if tail is enabled, send that anyway
+          if tail? do
+            state
+          else
+            out_buffer_fill(state)
+          end
+
+        {:not_speaking, _} ->
+          out_buffer_fill(state)
+
+        {:speaking, _} ->
+          state
+      end
+
+    actions =
+      if delay? do
+        if state.delay_buffer do
+          [{:buffer, {:output, to_buffer(state.delay_buffer)}} | actions]
         else
           actions
         end
-
-      actions =
-        if send_buffer do
-          [{:buffer, {:output, send_buffer}} | actions]
+      else
+        if state.out_buffer do
+          [{:buffer, {:output, to_buffer(state.out_buffer)}} | actions]
         else
           actions
+        end
+      end
+
+    {actions, state}
+  end
+
+  defp notify({actions, state}) do
+    if state.opts.notify? do
+      actions =
+        case state.status do
+          {:not_speaking, 0} ->
+            [{:notify_parent, {:speaking, :stop, state.probability}} | actions]
+
+          {:speaking, 0} ->
+            [{:notify_parent, {:speaking, :start, state.probability}} | actions]
+
+          _ ->
+            actions
         end
 
       {actions, state}
     else
-      %{state | buffered: buffered}
-      {[demand: {:input, 1}], state}
+      {actions, state}
     end
+  end
+
+  defp to_buffer(data) do
+    %Membrane.Buffer{payload: IO.iodata_to_binary(data)}
+  end
+
+  defp out_buffer_fill(state) do
+    buffer_size = IO.iodata_length(state.out_buffer) * 8
+
+    out_buffer =
+      case state.opts.fill_mode do
+        :silence ->
+          <<0::size(buffer_size)>>
+
+        :cut ->
+          nil
+      end
+
+    %{state | out_buffer: out_buffer}
   end
 
   defp ensure_model do
