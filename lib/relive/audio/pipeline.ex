@@ -3,6 +3,10 @@ defmodule Relive.Audio.Pipeline do
   alias Relive.Audio.VAD
   alias Relive.Audio.Timestamper
 
+  alias Membrane.Audiometer.Peakmeter
+  alias Membrane.FFmpeg.SWResample
+  alias Membrane.PortAudio
+
   require Logger
 
   @target_sample_rate 16000
@@ -19,10 +23,11 @@ defmodule Relive.Audio.Pipeline do
   @impl true
   def handle_init(_ctx, opts) do
     peaks_per_second = Keyword.get(opts, :peaks_per_second, @default_peaks_per_second)
+    peak_interval = round(1000 / peaks_per_second)
     # Setup the flow of the data
     # Stream from file
     spec =
-      child(:source, %Membrane.PortAudio.Source{
+      child(:source, %PortAudio.Source{
         channels: 1,
         # sample_format: :s16le,
         sample_format: :f32le,
@@ -30,12 +35,17 @@ defmodule Relive.Audio.Pipeline do
         portaudio_buffer_size: 1600
       })
       |> child(:timestamper, %Timestamper{bytes_per_second: @byte_per_second})
-      |> child(:peak_1, Membrane.Audiometer.Peakmeter)
-      |> child(:vad, %VAD{
-        fill_mode: :silence
+      |> child(:peak_1, %Peakmeter{
+        interval: Membrane.Time.milliseconds(peak_interval)
       })
-      |> child(:peak_2, Membrane.Audiometer.Peakmeter)
-      |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
+      |> child(:vad, %VAD{
+        filter?: true,
+        fill_mode: :cut
+      })
+      |> child(:peak_2, %Peakmeter{
+        interval: Membrane.Time.milliseconds(peak_interval)
+      })
+      |> child(:converter, %SWResample.Converter{
         output_stream_format: %Membrane.RawAudio{
           sample_format: :s32le,
           sample_rate: 44_100,
@@ -50,10 +60,7 @@ defmodule Relive.Audio.Pipeline do
     # |> child(:output, %Membrane.PortAudio.Sink{})
     # |> child(:file, %Membrane.File.Sink{location: "/data/local.raw"})
 
-    peak_interval = round(1000 / peaks_per_second)
-
-    {[spec: spec],
-     %{amps: %{peak_1: [], peak_2: []}, clock_started?: false, peak_interval: peak_interval}}
+    {[spec: spec], %{amps: %{peak_1: [], peak_2: []}, clock_started?: false}}
   end
 
   @impl true
@@ -65,21 +72,10 @@ defmodule Relive.Audio.Pipeline do
         state
       ) do
     if is_number(amp) do
-      actions =
-        case state do
-          %{clock_started?: false} ->
-            # Let membrane figure out timing
-            [start_timer: {{:frame, element}, Membrane.Time.milliseconds(state.peak_interval)}]
-
-          _ ->
-            []
-        end
-
-      amps = Map.put(state.amps, element, [amp | state.amps[element]])
-      {actions, %{state | amps: amps, clock_started?: true}}
-    else
-      {[], state}
+      Phoenix.PubSub.broadcast(Relive.PubSub, "amplitude", {:amp, element, amp})
     end
+
+    {[], state}
   end
 
   def handle_child_notification(
@@ -88,18 +84,27 @@ defmodule Relive.Audio.Pipeline do
         _context,
         state
       ) do
-    IO.inspect(activity)
     Phoenix.PubSub.broadcast(Relive.PubSub, "speaking", {:speaking, activity, probability})
     {[], state}
   end
 
-  # We just ignore audiometer underruns, they are not terribly exciting
   def handle_child_notification(
         {:audiometer, :underrun},
         _element,
         _context,
         state
       ) do
+    {[], state}
+  end
+
+  # We just ignore audiometer underruns, they are not terribly exciting
+  def handle_child_notification(
+        {:audiometer, other},
+        element,
+        _context,
+        state
+      ) do
+    Logger.info("Unhandled audiometer message for #{element}: #{inspect(other)}")
     {[], state}
   end
 
@@ -111,20 +116,5 @@ defmodule Relive.Audio.Pipeline do
       ) do
     IO.inspect(notification, label: "unhandled notification")
     {[], state}
-  end
-
-  @impl true
-  def handle_tick({:frame, element}, _ctx, state) do
-    amps = state.amps[element]
-
-    if amps != [] do
-      avg = Enum.sum(amps) / Enum.count(amps)
-      Logger.info("#{element}: #{avg}")
-      Phoenix.PubSub.broadcast(Relive.PubSub, "amplitude", {:amp, avg})
-    end
-
-    new = Map.put(state.amps, element, [])
-
-    {[], %{state | amps: new}}
   end
 end

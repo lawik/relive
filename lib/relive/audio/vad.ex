@@ -1,6 +1,8 @@
 defmodule Relive.Audio.VAD do
   use Membrane.Filter
 
+  alias Membrane.RawAudio
+
   require Logger
 
   def_options(
@@ -36,13 +38,13 @@ defmodule Relive.Audio.VAD do
     availability: :always,
     flow_control: :manual,
     demand_unit: :buffers,
-    accepted_format: Membrane.RawAudio
+    accepted_format: RawAudio
   )
 
   def_output_pad(:output,
     availability: :always,
     flow_control: :manual,
-    accepted_format: Membrane.RawAudio
+    accepted_format: RawAudio
   )
 
   @model_url "https://raw.githubusercontent.com/snakers4/silero-vad/v4.0stable/files/silero_vad.onnx"
@@ -89,7 +91,12 @@ defmodule Relive.Audio.VAD do
   end
 
   @impl true
-  def handle_buffer(:input, %Membrane.Buffer{payload: data} = buffer, _context, state) do
+  def handle_buffer(
+        :input,
+        %Membrane.Buffer{payload: data} = buffer,
+        %{pads: %{input: %{stream_format: stream_format}}},
+        state
+      ) do
     %{n: n, sr: sr, c: c, h: h} = state.run_state
     buffered = [state.buffered, data]
 
@@ -137,13 +144,10 @@ defmodule Relive.Audio.VAD do
             buffer
 
           {false, true, :cut} ->
-            Logger.info("Cutting buffer...")
             nil
 
           {false, true, :silence} ->
-            Logger.info("Padding silence...")
-            buffer_size = byte_size(buffer.payload) * 8
-            %{buffer | payload: <<0::size(buffer_size)>>}
+            %{buffer | payload: RawAudio.silence(stream_format)}
         end
 
       actions =
@@ -155,7 +159,7 @@ defmodule Relive.Audio.VAD do
 
       actions =
         if send_buffer do
-          [{:buffer, {:output, send_buffer}}]
+          [{:buffer, {:output, send_buffer}} | actions]
         else
           actions
         end
