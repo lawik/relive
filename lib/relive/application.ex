@@ -6,6 +6,7 @@ defmodule Relive.Application do
     children = [
       {Phoenix.PubSub, name: Relive.PubSub},
       {Finch, name: Relive.Finch},
+      Relive.Audio.Supervisor,
       ReliveWeb.Endpoint
     ]
 

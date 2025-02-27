@@ -29,10 +29,11 @@ defmodule Relive.Audio.Pipeline do
         portaudio_buffer_size: 1600
       })
       |> child(:peak_1, %Peakmeter{
+        # We set this interval to ensure a reasonable pace of notifications
         interval: Membrane.Time.milliseconds(peak_interval)
       })
       |> child(:vad, %VAD{
-        filter?: true,
+        filter?: false,
         delay?: true,
         tail?: true,
         fill_mode: :cut

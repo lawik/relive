@@ -130,12 +130,12 @@ defmodule Relive.Audio.VAD do
     end
   end
 
-  defp buffer({actions, state}, buffered) do
-    {actions, %{state | buffered: buffered}}
-  end
-
   defp buffer_ready?(state, buffered) do
     IO.iodata_length(buffered) >= state.bytes
+  end
+
+  defp buffer({actions, state}, buffered) do
+    {actions, %{state | buffered: buffered}}
   end
 
   defp demand_next({actions, state}) do
@@ -188,7 +188,9 @@ defmodule Relive.Audio.VAD do
     {actions, %{state | status: status}}
   end
 
-  defp filter({actions, %{opts: %{filter?: false}}} = state) do
+  defp filter({actions, %{opts: %{filter?: false}} = state}) do
+    # Filtering is off, always pass output
+    actions = [{:buffer, {:output, to_buffer(state.out_buffer)}} | actions]
     {actions, state}
   end
 

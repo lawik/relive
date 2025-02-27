@@ -17,7 +17,7 @@ defmodule ReliveWeb.Router do
   scope "/", ReliveWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live "/", BaseLive
   end
 
   # Other scopes may use custom stacks.
