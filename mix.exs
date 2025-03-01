@@ -33,6 +33,7 @@ defmodule Relive.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:membrane_mp3_mad_plugin, "~> 0.18"},
       {:req, "~> 0.5"},
       {:membrane_fake_plugin, "~> 0.11"},
       {:membrane_audiometer_plugin, "~> 0.12"},

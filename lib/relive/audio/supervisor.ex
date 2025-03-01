@@ -23,6 +23,7 @@ defmodule Relive.Audio.Supervisor do
 
   defp opts_from_variant(:default) do
     [
+      variant: :default,
       peaks_per_second: 3
     ]
   end
