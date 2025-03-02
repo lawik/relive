@@ -41,6 +41,7 @@ defmodule Relive.MixProject do
       {:membrane_portaudio_plugin, "~> 0.19"},
       {:membrane_file_plugin, "~> 0.17"},
       {:membrane_core, "~> 1.0"},
+      # {:membrane_core, path: "../membrane_core", override: true},
       {:kokoro, [github: "samrat/kokoro", override: true]},
       {:ortex, "~> 0.1"},
       {:exla, "~> 0.9"},

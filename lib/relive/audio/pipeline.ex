@@ -67,10 +67,11 @@ defmodule Relive.Audio.Pipeline do
       interval: Membrane.Time.milliseconds(peak_interval)
     })
     |> child(:vad, %VAD{
+      buffer?: true,
       filter?: true,
       delay?: true,
       tail?: true,
-      fill_mode: :cut
+      fill_mode: :silence
     })
     |> child(:peak_2, %Peakmeter{
       interval: Membrane.Time.milliseconds(peak_interval)
@@ -81,6 +82,11 @@ defmodule Relive.Audio.Pipeline do
 
     |> child(:voice, Relive.Audio.Kokoro)
     |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
+      input_stream_format: %Membrane.RawAudio{
+        sample_format: :f32le,
+        sample_rate: 24000,
+        channels: 1
+      },
       output_stream_format: %Membrane.RawAudio{
         sample_format: :f32le,
         sample_rate: 16000,
@@ -88,7 +94,41 @@ defmodule Relive.Audio.Pipeline do
       }
     })
     # Stream data into PortAudio to play it on speakers.
-    |> child(:output, %Membrane.PortAudio.Sink{})
+    # |> child(:output, %Membrane.File.Sink{location: "file.pcm"})
+
+    |> child(:output, Membrane.PortAudio.Sink)
+  end
+
+  defp children(:try, _opts) do
+    child(:source, %PortAudio.Source{
+      channels: 1,
+      # sample_format: :s16le,
+      sample_format: :f32le,
+      sample_rate: 16000,
+      portaudio_buffer_size: 1600
+    })
+    |> child(:buffer, %Relive.Audio.Buffer{interval: Membrane.Time.milliseconds(1000)})
+    |> child(:transcribe, %Relive.Audio.Whisper{serving: Relive.Whisper})
+    # |> child(:output, Membrane.Fake.Sink.Buffers)
+
+    |> child(:voice, Relive.Audio.Kokoro)
+    # |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
+    #   input_stream_format: %Membrane.RawAudio{
+    #     sample_format: :f32le,
+    #     sample_rate: 24000,
+    #     channels: 1
+    #   },
+    #   output_stream_format: %Membrane.RawAudio{
+    #     sample_format: :f32le,
+    #     sample_rate: 16000,
+    #     channels: 1
+    #   }
+    # })
+    # Stream data into PortAudio to play it on speakers.
+    # |> child(:output, %Membrane.File.Sink{location: "file.pcm"})
+
+    # |> child(:output, Membrane.PortAudio.Sink)
+    |> child(:output, Membrane.Fake.Sink)
   end
 
   @impl true

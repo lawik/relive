@@ -16,6 +16,11 @@ defmodule Relive.Audio.VAD do
       default: :silence,
       description: "Create breaks in stream or pad filtered out parts with silence."
     ],
+    buffer?: [
+      spec: boolean(),
+      default: true,
+      description: "Buffer until speech is no longer detected. Default: true"
+    ],
     delay?: [
       spec: boolean(),
       default: true,
@@ -46,6 +51,7 @@ defmodule Relive.Audio.VAD do
     ]
   )
 
+  # TODO: change all to use auto flow_control
   def_input_pad(:input,
     availability: :always,
     flow_control: :manual,
@@ -152,11 +158,25 @@ defmodule Relive.Audio.VAD do
       |> List.wrap()
       |> Nx.stack()
 
-    {output, hn, cn} = Ortex.run(state.model, {input, sr, h, c})
+    {t, {output, hn, cn}} =
+      :timer.tc(fn ->
+        Ortex.run(state.model, {input, sr, h, c})
+      end)
+
+    Logger.info("Processed #{byte_size(data)} bytes in #{t / 1000}ms")
     prob = output |> Nx.squeeze() |> Nx.to_number()
 
     run_state = %{c: cn, h: hn, n: n + 1, sr: sr}
     {actions, %{state | run_state: run_state, probability: prob}}
+  end
+
+  defp clear_buffer({actions, %{opts: %{buffer?: true, delay?: delay?}} = state}) do
+    # Keep buffer, disregard out_buffer and delay_buffer
+    if state.out_buffer && delay? do
+      {actions, %{state | delay_buffer: state.out_buffer, out_buffer: nil}}
+    else
+      {actions, state}
+    end
   end
 
   defp clear_buffer({actions, %{opts: %{filter?: true, delay?: true}} = state}) do
@@ -194,7 +214,7 @@ defmodule Relive.Audio.VAD do
     {actions, state}
   end
 
-  defp filter({actions, %{opts: %{delay?: delay?, tail?: tail?}} = state}) do
+  defp filter({actions, %{opts: %{delay?: delay?, tail?: tail?, buffer?: buffer?}} = state}) do
     state =
       case state.status do
         {:not_speaking, 0} ->
@@ -205,8 +225,21 @@ defmodule Relive.Audio.VAD do
             out_buffer_fill(state)
           end
 
-        {:not_speaking, _} ->
-          out_buffer_fill(state)
+        {:not_speaking, count} ->
+          if buffer? do
+            IO.inspect({:not_speaking, count, IO.iodata_length(state.buffered)},
+              label: "not speaking"
+            )
+
+            if count > 1 and IO.iodata_length(state.buffered) > 0 do
+              out_buffer_fill(state)
+            else
+              IO.inspect(count, label: "still buffering")
+              state
+            end
+          else
+            out_buffer_fill(state)
+          end
 
         {:speaking, _} ->
           state
@@ -252,6 +285,13 @@ defmodule Relive.Audio.VAD do
 
   defp to_buffer(data) do
     %Membrane.Buffer{payload: IO.iodata_to_binary(data)}
+  end
+
+  defp out_buffer_fill(%{opts: %{buffer?: true}} = state) do
+    out_buffer = IO.iodata_to_binary(state.buffered)
+    IO.puts("Flushing buffer of #{byte_size(out_buffer)} bytes")
+
+    %{state | out_buffer: out_buffer, buffered: []}
   end
 
   defp out_buffer_fill(state) do

@@ -2,6 +2,7 @@ defmodule Relive.Audio.Whisper do
   use Membrane.Filter
 
   alias Membrane.RawAudio
+  alias Relive.Audio.RawText
 
   require Logger
 
@@ -23,7 +24,7 @@ defmodule Relive.Audio.Whisper do
     availability: :always,
     flow_control: :manual,
     demand_unit: :buffers,
-    accepted_format: _
+    accepted_format: RawText
   )
 
   @impl true
@@ -34,7 +35,12 @@ defmodule Relive.Audio.Whisper do
 
   @impl true
   def handle_playing(_ctx, state) do
-    {[demand: {:input, 1}], state}
+    {[demand: {:input, 1}, stream_format: {:output, %RawText{}}], state}
+  end
+
+  @impl true
+  def handle_stream_format(_, _stream_format, _ctx, state) do
+    {[], state}
   end
 
   @impl true
@@ -106,6 +112,12 @@ defmodule Relive.Audio.Whisper do
       |> Nx.reshape({:auto, audio.num_channels})
       |> Nx.mean(axes: [1])
 
-    Nx.Serving.batched_run(name, audio)
+    {t, output} =
+      :timer.tc(fn ->
+        Nx.Serving.batched_run(name, audio)
+      end)
+
+    Logger.info("Transcribed in #{t / 1000}ms")
+    output
   end
 end

@@ -2,6 +2,7 @@ defmodule Relive.Audio.Kokoro do
   use Membrane.Filter
 
   alias Membrane.RawAudio
+  alias Relive.Audio.RawText
 
   require Logger
 
@@ -15,13 +16,17 @@ defmodule Relive.Audio.Kokoro do
     availability: :always,
     flow_control: :manual,
     demand_unit: :buffers,
-    accepted_format: _
+    accepted_format: RawText
   )
 
   def_output_pad(:output,
     availability: :always,
     flow_control: :manual,
-    accepted_format: RawAudio
+    accepted_format: %RawAudio{
+      sample_format: :f32le,
+      sample_rate: 24000,
+      channels: 1
+    }
   )
 
   @model_url "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/main/onnx/model.onnx?download=true"
@@ -38,16 +43,25 @@ defmodule Relive.Audio.Kokoro do
 
   @impl true
   def handle_playing(_ctx, state) do
+    IO.puts("playing...")
     {[demand: {:input, 1}, stream_format: {:output, @format}], state}
+    # {[demand: {:input, 1}], state}
+  end
+
+  @impl true
+  def handle_stream_format(_, _stream_format, _ctx, state) do
+    {[], state}
   end
 
   @impl true
   def handle_demand(:output, size, :buffers, _ctx, state) do
+    IO.puts("demand buffers...")
+    # {[demand: {:input, size}, stream_format: {:output, @format}], state}
     {[demand: {:input, size}], state}
   end
 
-  @impl true
   def handle_demand(:output, _size, :bytes, _ctx, state) do
+    IO.puts("demand bytes...")
     {[demand: {:input, 1}], state}
   end
 
@@ -58,10 +72,13 @@ defmodule Relive.Audio.Kokoro do
         _ctx,
         state
       ) do
+    IO.puts("processing...")
+
     text =
       data
       |> Enum.map(& &1.text)
       |> Enum.join(" ")
+      |> String.trim()
 
     Logger.info("Processing text: #{text}")
 
@@ -77,6 +94,7 @@ defmodule Relive.Audio.Kokoro do
 
   @impl true
   def handle_info(_, _ctx, state) do
+    IO.puts("info...")
     {[], state}
   end
 
