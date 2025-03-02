@@ -58,7 +58,7 @@ defmodule Relive.Audio.VADNeo do
     min_ms = max(mod.chunk_ms, 100)
 
     sample_rate_hz = 16000
-    sr = Nx.tensor(sample_rate_hz, type: :s64)
+    sr = Nx.tensor(sample_rate_hz, type: :s64, backend: Nx.BinaryBackend)
     n_samples = min_ms * (sample_rate_hz / 1000)
 
     bytes_per_chunk = n_samples * 2
@@ -136,7 +136,7 @@ defmodule Relive.Audio.VADNeo do
 
     input =
       data
-      |> Nx.from_binary(:f32)
+      |> Nx.from_binary(:f32, backend: Nx.BinaryBackend)
       |> List.wrap()
       |> Nx.stack()
 
