@@ -15,15 +15,13 @@ defmodule Relive.Audio.Buffer do
 
   def_input_pad(:input,
     availability: :always,
-    flow_control: :manual,
-    demand_unit: :buffers,
+    flow_control: :auto,
     accepted_format: RawAudio
   )
 
   def_output_pad(:output,
     availability: :always,
-    flow_control: :manual,
-    demand_unit: :buffers,
+    flow_control: :auto,
     accepted_format: RawAudio
   )
 

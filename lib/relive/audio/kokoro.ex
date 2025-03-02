@@ -55,13 +55,13 @@ defmodule Relive.Audio.Kokoro do
 
   @impl true
   def handle_demand(:output, size, :buffers, _ctx, state) do
-    IO.puts("demand buffers...")
+    # IO.puts("demand buffers...")
     # {[demand: {:input, size}, stream_format: {:output, @format}], state}
     {[demand: {:input, size}], state}
   end
 
   def handle_demand(:output, _size, :bytes, _ctx, state) do
-    IO.puts("demand bytes...")
+    # IO.puts("demand bytes...")
     {[demand: {:input, 1}], state}
   end
 
@@ -72,7 +72,7 @@ defmodule Relive.Audio.Kokoro do
         _ctx,
         state
       ) do
-    IO.puts("processing...")
+    # IO.puts("processing...")
 
     text =
       data
@@ -80,9 +80,17 @@ defmodule Relive.Audio.Kokoro do
       |> Enum.join(" ")
       |> String.trim()
 
-    Logger.info("Processing text: #{text}")
+    Logger.info("#{text}")
 
-    binary = Kokoro.create_audio_binary(state.model, text, "voice", 1.0)
+    {t, binary} =
+      :timer.tc(fn ->
+        Kokoro.create_audio_binary(state.model, text, "voice", 1.0)
+      end)
+
+    size = byte_size(binary)
+    duration = size / 4 / 24000 * 1000
+
+    # Logger.info("Produced #{size / 1024}kb for #{duration}ms of audio after #{t / 1000}ms of processing.")
 
     buffer = %Membrane.Buffer{
       metadata: %{},
@@ -94,7 +102,7 @@ defmodule Relive.Audio.Kokoro do
 
   @impl true
   def handle_info(_, _ctx, state) do
-    IO.puts("info...")
+    # IO.puts("info...")
     {[], state}
   end
 

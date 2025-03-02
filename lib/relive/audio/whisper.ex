@@ -60,11 +60,11 @@ defmodule Relive.Audio.Whisper do
     if data != <<0::size(bits)>> do
       audio = to_audio(data, ch, sr)
       %{chunks: chunks} = transcribe!(state.opts.serving, audio)
-      Logger.info("Chunks: #{inspect(chunks, pretty: true)}")
+      # Logger.info("Chunks: #{inspect(chunks, pretty: true)}")
       new_buffer = %Membrane.Buffer{payload: chunks}
       {[notify_parent: {:transcript, chunks}, buffer: {:output, new_buffer}], state}
     else
-      Logger.info("Silence...")
+      # #Logger.info("Silence...")
       {[], state}
     end
   end
@@ -94,7 +94,7 @@ defmodule Relive.Audio.Whisper do
         Nx.Serving.batched_run(name, audio)
       end)
 
-    Logger.info("Warmed up whisper in #{t / 1000}ms")
+    # Logger.info("Warmed up whisper in #{t / 1000}ms")
   end
 
   defp to_audio(raw_pcm_32_or_wav, channels, sampling_rate) do
@@ -106,6 +106,8 @@ defmodule Relive.Audio.Whisper do
   end
 
   defp transcribe!(name, audio) do
+    duration = byte_size(audio.data) / 2 / 4 / audio.sampling_rate
+
     audio =
       audio.data
       |> Nx.from_binary(:f32)
@@ -117,7 +119,7 @@ defmodule Relive.Audio.Whisper do
         Nx.Serving.batched_run(name, audio)
       end)
 
-    Logger.info("Transcribed in #{t / 1000}ms")
+    # Logger.info("Transcribed #{round(duration * 1000)}ms in #{t / 1000}ms")
     output
   end
 end

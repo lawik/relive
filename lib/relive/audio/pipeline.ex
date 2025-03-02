@@ -1,6 +1,7 @@
 defmodule Relive.Audio.Pipeline do
   use Membrane.Pipeline
   alias Relive.Audio.VAD
+  alias Relive.Audio.VADNeo
 
   alias Membrane.Audiometer.Peakmeter
   # alias Membrane.FFmpeg.SWResample
@@ -66,20 +67,11 @@ defmodule Relive.Audio.Pipeline do
       # We set this interval to ensure a reasonable pace of notifications
       interval: Membrane.Time.milliseconds(peak_interval)
     })
-    |> child(:vad, %VAD{
-      buffer?: true,
-      filter?: true,
-      delay?: true,
-      tail?: true,
-      fill_mode: :silence
-    })
+    |> child(:vad, %VADNeo{chunk_tolerance: 0})
     |> child(:peak_2, %Peakmeter{
       interval: Membrane.Time.milliseconds(peak_interval)
     })
-    |> child(:buffer, %Relive.Audio.Buffer{interval: Membrane.Time.milliseconds(1000)})
     |> child(:transcribe, %Relive.Audio.Whisper{serving: Relive.Whisper})
-    # |> child(:output, Membrane.Fake.Sink.Buffers)
-
     |> child(:voice, Relive.Audio.Kokoro)
     |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
       input_stream_format: %Membrane.RawAudio{
@@ -112,23 +104,24 @@ defmodule Relive.Audio.Pipeline do
     # |> child(:output, Membrane.Fake.Sink.Buffers)
 
     |> child(:voice, Relive.Audio.Kokoro)
-    # |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
-    #   input_stream_format: %Membrane.RawAudio{
-    #     sample_format: :f32le,
-    #     sample_rate: 24000,
-    #     channels: 1
-    #   },
-    #   output_stream_format: %Membrane.RawAudio{
-    #     sample_format: :f32le,
-    #     sample_rate: 16000,
-    #     channels: 1
-    #   }
-    # })
+    |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
+      input_stream_format: %Membrane.RawAudio{
+        sample_format: :f32le,
+        sample_rate: 24000,
+        channels: 1
+      },
+      output_stream_format: %Membrane.RawAudio{
+        sample_format: :f32le,
+        sample_rate: 16000,
+        channels: 1
+      }
+    })
     # Stream data into PortAudio to play it on speakers.
     # |> child(:output, %Membrane.File.Sink{location: "file.pcm"})
 
-    # |> child(:output, Membrane.PortAudio.Sink)
-    |> child(:output, Membrane.Fake.Sink)
+    |> child(:output, Membrane.PortAudio.Sink)
+
+    # |> child(:output, Membrane.Fake.Sink)
   end
 
   @impl true
@@ -172,7 +165,7 @@ defmodule Relive.Audio.Pipeline do
         _context,
         state
       ) do
-    Logger.info("Unhandled audiometer message for #{element}: #{inspect(other)}")
+    # Logger.info("Unhandled audiometer message for #{element}: #{inspect(other)}")
     {[], state}
   end
 
@@ -182,7 +175,7 @@ defmodule Relive.Audio.Pipeline do
         _context,
         state
       ) do
-    IO.inspect(notification, label: "unhandled notification")
+    # IO.inspect(notification, label: "unhandled notification")
     {[], state}
   end
 end

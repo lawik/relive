@@ -163,7 +163,7 @@ defmodule Relive.Audio.VAD do
         Ortex.run(state.model, {input, sr, h, c})
       end)
 
-    Logger.info("Processed #{byte_size(data)} bytes in #{t / 1000}ms")
+    # Logger.info("Processed #{byte_size(data)} bytes in #{t / 1000}ms")
     prob = output |> Nx.squeeze() |> Nx.to_number()
 
     run_state = %{c: cn, h: hn, n: n + 1, sr: sr}
@@ -227,14 +227,12 @@ defmodule Relive.Audio.VAD do
 
         {:not_speaking, count} ->
           if buffer? do
-            IO.inspect({:not_speaking, count, IO.iodata_length(state.buffered)},
-              label: "not speaking"
-            )
+            # IO.inspect({:not_speaking, count, IO.iodata_length(state.buffered)}, label: "not speaking")
 
             if count > 1 and IO.iodata_length(state.buffered) > 0 do
               out_buffer_fill(state)
             else
-              IO.inspect(count, label: "still buffering")
+              # IO.inspect(count, label: "still buffering")
               state
             end
           else
@@ -289,7 +287,7 @@ defmodule Relive.Audio.VAD do
 
   defp out_buffer_fill(%{opts: %{buffer?: true}} = state) do
     out_buffer = IO.iodata_to_binary(state.buffered)
-    IO.puts("Flushing buffer of #{byte_size(out_buffer)} bytes")
+    # IO.puts("Flushing buffer of #{byte_size(out_buffer)} bytes")
 
     %{state | out_buffer: out_buffer, buffered: []}
   end
