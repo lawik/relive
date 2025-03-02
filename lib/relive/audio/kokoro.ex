@@ -90,7 +90,9 @@ defmodule Relive.Audio.Kokoro do
     size = byte_size(binary)
     duration = size / 4 / 24000 * 1000
 
-    # Logger.info("Produced #{size / 1024}kb for #{duration}ms of audio after #{t / 1000}ms of processing.")
+    Logger.info(
+      "Produced #{size / 1024}kb for #{duration}ms of audio after #{t / 1000}ms of processing."
+    )
 
     buffer = %Membrane.Buffer{
       metadata: %{},

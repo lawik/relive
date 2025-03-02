@@ -79,7 +79,8 @@ defmodule Relive.Audio.VADNeo do
       held_buffer: [],
       buffered: [],
       probability: 0.0,
-      status: {:not_speaking, 0}
+      status: {:not_speaking, 0},
+      chunks: 0
     }
 
     {[], state}
@@ -103,6 +104,8 @@ defmodule Relive.Audio.VADNeo do
         state
       ) do
     buffered = [state.buffered, data]
+
+    state = %{state | chunks: state.chunks + 1}
 
     if buffer_ready?(state, buffered) do
       {[], state}
@@ -176,25 +179,31 @@ defmodule Relive.Audio.VADNeo do
     buffer_size = IO.iodata_length(state.buffered)
 
     state =
-      case state.status do
-        {:not_speaking, count} when count == tolerance + 1 ->
-          if buffer_size > 0 do
-            send_buffer(state)
-          else
+      if state.chunks >= state.opts.max_chunks do
+        IO.puts("VAD reached max chunks: #{state.opts.max_chunks}")
+        send_buffer(state)
+      else
+        case state.status do
+          {:not_speaking, count} when count == tolerance + 1 ->
+            if buffer_size > 0 do
+              IO.puts("Sending voice...")
+              send_buffer(state)
+            else
+              hold_buffer(state)
+            end
+
+          {:not_speaking, count} when count > tolerance ->
+            # Continuously empty the non-speaking buffer
+            drop_buffer(state)
+
+          {:not_speaking, _} ->
             hold_buffer(state)
-          end
 
-        {:not_speaking, count} when count > tolerance ->
-          # Continuously empty the non-speaking buffer
-          drop_buffer(state)
-
-        {:not_speaking, _} ->
-          hold_buffer(state)
-
-        {:speaking, count} ->
-          # IO.puts("Speech: #{count}")
-          # Keep buffer building up whether speaking or not_speaking within tolerance
-          hold_buffer(state)
+          {:speaking, count} ->
+            # IO.puts("Speech: #{count}")
+            # Keep buffer building up whether speaking or not_speaking within tolerance
+            hold_buffer(state)
+        end
       end
 
     actions =
@@ -208,11 +217,14 @@ defmodule Relive.Audio.VADNeo do
   end
 
   defp send_buffer(state) do
+    IO.puts("sending")
+
     %{
       state
       | out_buffer: IO.iodata_to_binary([state.held_buffer, state.buffered]),
         held_buffer: [],
-        buffered: []
+        buffered: [],
+        chunks: 0
     }
   end
 
@@ -221,7 +233,7 @@ defmodule Relive.Audio.VADNeo do
   end
 
   defp drop_buffer(state) do
-    %{state | out_buffer: nil, held_buffer: [], buffered: []}
+    %{state | out_buffer: nil, held_buffer: [], buffered: [], chunks: 0}
   end
 
   defp notify({actions, state}) do

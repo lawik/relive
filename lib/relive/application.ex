@@ -7,8 +7,8 @@ defmodule Relive.Application do
       {Phoenix.PubSub, name: Relive.PubSub},
       {Finch, name: Relive.Finch},
       Relive.Audio.Supervisor,
-      {Nx.Serving,
-       serving: Relive.Audio.Whisper.serving("base"), name: Relive.Whisper, batch_timeout: 200},
+      # {Nx.Serving,
+      #  serving: Relive.Audio.Whisper.serving("base"), name: Relive.Whisper, batch_timeout: 200},
       ReliveWeb.Endpoint
     ]
 
@@ -16,7 +16,7 @@ defmodule Relive.Application do
     result = Supervisor.start_link(children, opts)
 
     # Give whisper a job to ensure it gets fully loaded
-    Task.start(fn -> Relive.Audio.Whisper.warmup(Relive.Whisper) end)
+    # Task.start(fn -> Relive.Audio.Whisper.warmup(Relive.Whisper) end)
     result
   end
 

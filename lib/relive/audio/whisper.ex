@@ -55,6 +55,7 @@ defmodule Relive.Audio.Whisper do
         %{pads: %{input: %{stream_format: %{channels: ch, sample_rate: sr}}}} = _ctx,
         state
       ) do
+    IO.puts("buffer to whisper")
     bits = byte_size(data) * 8
 
     if data != <<0::size(bits)>> do
@@ -76,7 +77,9 @@ defmodule Relive.Audio.Whisper do
     {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai/whisper-#{model}"})
 
     Bumblebee.Audio.speech_to_text_whisper(whisper, featurizer, tokenizer, generation_config,
-      defn_options: [compiler: EXLA]
+      # defn_options: [compiler: EXLA],
+      task: :transcribe,
+      language: "en"
     )
   end
 
@@ -94,7 +97,7 @@ defmodule Relive.Audio.Whisper do
         Nx.Serving.batched_run(name, audio)
       end)
 
-    # Logger.info("Warmed up whisper in #{t / 1000}ms")
+    Logger.info("Warmed up whisper in #{t / 1000}ms")
   end
 
   defp to_audio(raw_pcm_32_or_wav, channels, sampling_rate) do
@@ -119,7 +122,7 @@ defmodule Relive.Audio.Whisper do
         Nx.Serving.batched_run(name, audio)
       end)
 
-    # Logger.info("Transcribed #{round(duration * 1000)}ms in #{t / 1000}ms")
+    Logger.info("Transcribed #{round(duration * 1000)}ms in #{t / 1000}ms")
     output
   end
 end
