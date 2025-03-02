@@ -62,8 +62,9 @@ defmodule Relive.Audio.Whisper do
       audio = to_audio(data, ch, sr)
       %{chunks: chunks} = transcribe!(state.opts.serving, audio)
       # Logger.info("Chunks: #{inspect(chunks, pretty: true)}")
-      new_buffer = %Membrane.Buffer{payload: chunks}
-      {[notify_parent: {:transcript, chunks}, buffer: {:output, new_buffer}], state}
+      text = to_raw_text(chunks)
+      new_buffer = %Membrane.Buffer{payload: text}
+      {[notify_parent: {:transcript, text}, buffer: {:output, new_buffer}], state}
     else
       # #Logger.info("Silence...")
       {[], state}
@@ -83,7 +84,7 @@ defmodule Relive.Audio.Whisper do
     )
   end
 
-  def warmup(name) do
+  def warmup do
     blank = for _ <- 1..16000, into: <<>>, do: <<0, 0, 0, 0>>
 
     audio =
@@ -94,7 +95,7 @@ defmodule Relive.Audio.Whisper do
 
     {t, _} =
       :timer.tc(fn ->
-        Nx.Serving.batched_run(name, audio)
+        Nx.Serving.batched_run(Relive.Whisper, audio)
       end)
 
     Logger.info("Warmed up whisper in #{t / 1000}ms")
@@ -124,5 +125,12 @@ defmodule Relive.Audio.Whisper do
 
     Logger.info("Transcribed #{round(duration * 1000)}ms in #{t / 1000}ms")
     output
+  end
+
+  defp to_raw_text(chunks) do
+    chunks
+    |> Enum.map(& &1.text)
+    |> Enum.join(" ")
+    |> String.trim()
   end
 end

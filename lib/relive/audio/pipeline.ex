@@ -75,6 +75,7 @@ defmodule Relive.Audio.Pipeline do
     })
     # |> child(:buffer, %Buffer{duration_ms: 30000, })
     |> child(:transcribe, %Relive.Audio.Whisper{serving: Relive.Whisper})
+    |> child(:assistant, %Relive.LLM{serving: Relive.LLM})
     |> child(:voice, Relive.Audio.Kokoro)
     |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
       input_stream_format: %Membrane.RawAudio{

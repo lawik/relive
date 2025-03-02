@@ -68,38 +68,40 @@ defmodule Relive.Audio.Kokoro do
   @impl true
   def handle_buffer(
         :input,
-        %Membrane.Buffer{payload: data},
+        %Membrane.Buffer{payload: text},
         _ctx,
         state
       ) do
     # IO.puts("processing...")
 
-    text =
-      data
-      |> Enum.map(& &1.text)
-      |> Enum.join(" ")
-      |> String.trim()
-
     Logger.info("#{text}")
 
-    {t, binary} =
-      :timer.tc(fn ->
-        Kokoro.create_audio_binary(state.model, text, "voice", 1.0)
+    actions =
+      text
+      |> Enum.map(fn chunk ->
+        IO.puts("Speaking chunk of #{byte_size(chunk)} bytes")
+
+        {t, binary} =
+          :timer.tc(fn ->
+            Kokoro.create_audio_binary(state.model, chunk, "voice", 1.0)
+          end)
+
+        size = byte_size(binary)
+        duration = size / 4 / 24000 * 1000
+
+        Logger.info(
+          "Produced #{size / 1024}kb for #{duration}ms of audio after #{t / 1000}ms of processing."
+        )
+
+        buffer = %Membrane.Buffer{
+          metadata: %{},
+          payload: binary
+        }
+
+        {:buffer, {:output, buffer}}
       end)
 
-    size = byte_size(binary)
-    duration = size / 4 / 24000 * 1000
-
-    Logger.info(
-      "Produced #{size / 1024}kb for #{duration}ms of audio after #{t / 1000}ms of processing."
-    )
-
-    buffer = %Membrane.Buffer{
-      metadata: %{},
-      payload: binary
-    }
-
-    {[buffer: {:output, buffer}], state}
+    {actions, state}
   end
 
   @impl true
