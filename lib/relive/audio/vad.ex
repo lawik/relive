@@ -6,62 +6,51 @@ defmodule Relive.Audio.VAD do
   require Logger
 
   def_options(
-    filter?: [
-      spec: boolean(),
-      default: true,
-      description: "Parts without voice are removed from the stream."
-    ],
-    fill_mode: [
-      spec: :cut | :silence,
-      default: :silence,
-      description: "Create breaks in stream or pad filtered out parts with silence."
-    ],
-    buffer?: [
-      spec: boolean(),
-      default: true,
-      description: "Buffer until speech is no longer detected. Default: true"
-    ],
-    delay?: [
-      spec: boolean(),
-      default: true,
-      description:
-        "Delay audio by 1 chunk (typically 100ms) more when filtering to smooth out the start? Only applies if filtering. Default: true"
-    ],
-    tail?: [
-      spec: boolean(),
-      default: true,
-      description:
-        "Pass through 1 additional chunk (typically 100ms) more when filtering to smooth out the end? Only applies if filtering. Default: true"
-    ],
-    notify?: [
-      spec: boolean(),
-      default: true,
-      description: "Whether to send notifications to the parent pipeline on talk stop and start."
-    ],
     threshold: [
       spec: float(),
       default: 0.5,
       description:
         "Confidence value for the model that something is speech. 0.0 = not speech, 1.0 = speech"
     ],
-    log?: [
-      spec: boolean(),
-      default: false,
-      description: "Emit logs continuously."
+    chunk_ms: [
+      spec: integer(),
+      default: 100,
+      description: "Minimal size of chunk to feed the VAD. Minimum: 100, Default: 100"
+    ],
+    chunk_tolerance: [
+      spec: integer(),
+      default: 1,
+      description:
+        "Number of chunks with gap in speech to still consider a single section of speec. Default: 1"
+    ],
+    max_chunks: [
+      spec: integer(),
+      default: 20,
+      description: "Max numbers of chunks to buffer before sending. Default: 20"
     ]
   )
 
-  # TODO: change all to use auto flow_control
+  @format %RawAudio{
+    sample_format: :f32le,
+    sample_rate: 16000,
+    channels: 1
+  }
+
   def_input_pad(:input,
     availability: :always,
     flow_control: :manual,
     demand_unit: :buffers,
-    accepted_format: RawAudio
+    accepted_format: %RawAudio{
+      sample_format: :f32le,
+      sample_rate: 16000,
+      channels: 1
+    }
   )
 
   def_output_pad(:output,
     availability: :always,
     flow_control: :manual,
+    demand_unit: :buffers,
     accepted_format: RawAudio
   )
 
@@ -71,13 +60,7 @@ defmodule Relive.Audio.VAD do
   def handle_init(_ctx, mod) do
     model = ensure_model()
 
-    min_ms = 100
-
-    sample_rate_hz = 16000
-    sr = Nx.tensor(sample_rate_hz, type: :s64)
-    n_samples = min_ms * (sample_rate_hz / 1000)
-
-    bytes_per_chunk = n_samples * 2
+    sr = Nx.tensor(@format.sample_rate, type: :s64, backend: Nx.BinaryBackend)
 
     init_state = %{
       h: Nx.broadcast(0.0, {2, 1, 64}),
@@ -90,12 +73,12 @@ defmodule Relive.Audio.VAD do
       opts: mod,
       run_state: init_state,
       model: model,
-      bytes: bytes_per_chunk,
-      delay_buffer: nil,
       out_buffer: nil,
+      held_buffer: [],
       buffered: [],
       probability: 0.0,
-      status: {:not_speaking, 0}
+      status: {:not_speaking, 0},
+      chunks: 0
     }
 
     {[], state}
@@ -120,32 +103,21 @@ defmodule Relive.Audio.VAD do
       ) do
     buffered = [state.buffered, data]
 
-    if buffer_ready?(state, buffered) do
-      {[], state}
-      |> buffer(buffered)
-      |> demand_next()
-      |> process()
-      |> clear_buffer()
-      |> evaluate()
-      |> filter()
-      |> notify()
-    else
-      {[], state}
-      |> buffer(buffered)
-      |> demand_next()
-    end
-  end
+    state = %{state | chunks: state.chunks + 1}
 
-  defp buffer_ready?(state, buffered) do
-    IO.iodata_length(buffered) >= state.bytes
+    # Assumes we are getting the correct size of buffer on the input
+
+    {[], state}
+    |> buffer(buffered)
+    |> process()
+    |> evaluate()
+    |> filter()
+    |> notify()
+    |> demand_next()
   end
 
   defp buffer({actions, state}, buffered) do
     {actions, %{state | buffered: buffered}}
-  end
-
-  defp demand_next({actions, state}) do
-    {[{:demand, {:input, 1}} | actions], state}
   end
 
   defp process({actions, state}) do
@@ -154,37 +126,21 @@ defmodule Relive.Audio.VAD do
 
     input =
       data
-      |> Nx.from_binary(:f32)
+      |> Nx.from_binary(:f32, backend: Nx.BinaryBackend)
       |> List.wrap()
       |> Nx.stack()
 
-    {t, {output, hn, cn}} =
+    {_t, {output, hn, cn}} =
       :timer.tc(fn ->
         Ortex.run(state.model, {input, sr, h, c})
       end)
 
-    # Logger.info("Processed #{byte_size(data)} bytes in #{t / 1000}ms")
+    # #Logger.info("Processed #{byte_size(data)} bytes in #{t / 1000}ms")
     prob = output |> Nx.squeeze() |> Nx.to_number()
 
     run_state = %{c: cn, h: hn, n: n + 1, sr: sr}
+
     {actions, %{state | run_state: run_state, probability: prob}}
-  end
-
-  defp clear_buffer({actions, %{opts: %{buffer?: true, delay?: delay?}} = state}) do
-    # Keep buffer, disregard out_buffer and delay_buffer
-    if state.out_buffer && delay? do
-      {actions, %{state | delay_buffer: state.out_buffer, out_buffer: nil}}
-    else
-      {actions, state}
-    end
-  end
-
-  defp clear_buffer({actions, %{opts: %{filter?: true, delay?: true}} = state}) do
-    {actions, %{state | delay_buffer: state.out_buffer, out_buffer: state.buffered, buffered: []}}
-  end
-
-  defp clear_buffer({actions, state}) do
-    {actions, %{state | out_buffer: state.buffered, buffered: []}}
   end
 
   defp evaluate({actions, state}) do
@@ -208,103 +164,89 @@ defmodule Relive.Audio.VAD do
     {actions, %{state | status: status}}
   end
 
-  defp filter({actions, %{opts: %{filter?: false}} = state}) do
-    # Filtering is off, always pass output
-    actions = [{:buffer, {:output, to_buffer(state.out_buffer)}} | actions]
-    {actions, state}
-  end
+  defp filter({actions, state}) do
+    tolerance = state.opts.chunk_tolerance
+    buffer_size = IO.iodata_length(state.buffered)
 
-  defp filter({actions, %{opts: %{delay?: delay?, tail?: tail?, buffer?: buffer?}} = state}) do
     state =
-      case state.status do
-        {:not_speaking, 0} ->
-          # Just stopped speaking, if tail is enabled, send that anyway
-          if tail? do
-            state
-          else
-            out_buffer_fill(state)
-          end
-
-        {:not_speaking, count} ->
-          if buffer? do
-            # IO.inspect({:not_speaking, count, IO.iodata_length(state.buffered)}, label: "not speaking")
-
-            if count > 1 and IO.iodata_length(state.buffered) > 0 do
-              out_buffer_fill(state)
+      if state.chunks >= state.opts.max_chunks do
+        IO.puts("VAD reached max chunks: #{state.opts.max_chunks}")
+        send_buffer(state)
+      else
+        case state.status do
+          {:not_speaking, count} when count == tolerance + 1 ->
+            if buffer_size > 0 do
+              IO.puts("Sending voice...")
+              send_buffer(state)
             else
-              # IO.inspect(count, label: "still buffering")
-              state
+              hold_buffer(state)
             end
-          else
-            out_buffer_fill(state)
-          end
 
-        {:speaking, _} ->
-          state
+          {:not_speaking, count} when count > tolerance ->
+            # Continuously empty the non-speaking buffer
+            drop_buffer(state)
+
+          {:not_speaking, _} ->
+            hold_buffer(state)
+
+          {:speaking, _count} ->
+            # Keep buffer building up whether speaking or not_speaking within tolerance
+            hold_buffer(state)
+        end
       end
 
     actions =
-      if delay? do
-        if state.delay_buffer do
-          [{:buffer, {:output, to_buffer(state.delay_buffer)}} | actions]
-        else
-          actions
-        end
+      if state.out_buffer do
+        [{:buffer, {:output, to_buffer(state.out_buffer)}} | actions]
       else
-        if state.out_buffer do
-          [{:buffer, {:output, to_buffer(state.out_buffer)}} | actions]
-        else
-          actions
-        end
+        actions
       end
 
     {actions, state}
   end
 
+  defp send_buffer(state) do
+    IO.puts("sending")
+
+    %{
+      state
+      | out_buffer: IO.iodata_to_binary([state.held_buffer, state.buffered]),
+        held_buffer: [],
+        buffered: [],
+        chunks: 0
+    }
+  end
+
+  defp hold_buffer(state) do
+    %{state | out_buffer: nil, held_buffer: [state.held_buffer, state.buffered], buffered: []}
+  end
+
+  defp drop_buffer(state) do
+    %{state | out_buffer: nil, held_buffer: [], buffered: [], chunks: 0}
+  end
+
   defp notify({actions, state}) do
-    if state.opts.notify? do
-      actions =
-        case state.status do
-          {:not_speaking, 0} ->
-            [{:notify_parent, {:speaking, :stop, state.probability}} | actions]
+    actions =
+      case state.status do
+        {:not_speaking, 0} ->
+          [{:notify_parent, {:speaking, :stop, state.probability}} | actions]
 
-          {:speaking, 0} ->
-            [{:notify_parent, {:speaking, :start, state.probability}} | actions]
+        {:speaking, 0} ->
+          [{:notify_parent, {:speaking, :start, state.probability}} | actions]
 
-          _ ->
-            actions
-        end
+        _ ->
+          actions
+      end
 
-      {actions, state}
-    else
-      {actions, state}
-    end
+    {actions, state}
+  end
+
+  defp demand_next({actions, state}) do
+    {[{:demand, {:input, 1}} | actions], state}
   end
 
   defp to_buffer(data) do
     %Membrane.Buffer{payload: IO.iodata_to_binary(data)}
-  end
-
-  defp out_buffer_fill(%{opts: %{buffer?: true}} = state) do
-    out_buffer = IO.iodata_to_binary(state.buffered)
-    # IO.puts("Flushing buffer of #{byte_size(out_buffer)} bytes")
-
-    %{state | out_buffer: out_buffer, buffered: []}
-  end
-
-  defp out_buffer_fill(state) do
-    buffer_size = IO.iodata_length(state.out_buffer) * 8
-
-    out_buffer =
-      case state.opts.fill_mode do
-        :silence ->
-          <<0::size(buffer_size)>>
-
-        :cut ->
-          nil
-      end
-
-    %{state | out_buffer: out_buffer}
   end
 
   defp ensure_model do
@@ -322,5 +264,10 @@ defmodule Relive.Audio.VAD do
     end
 
     Ortex.load(model_path)
+  end
+
+  def mono_samples(chunk_ms) do
+    min_ms = max(chunk_ms, 100)
+    round(min_ms * (@format.sample_rate / 1000))
   end
 end

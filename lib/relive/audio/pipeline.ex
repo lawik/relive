@@ -2,11 +2,9 @@ defmodule Relive.Audio.Pipeline do
   use Membrane.Pipeline
 
   alias Relive.Audio.VAD
-  alias Relive.Audio.VADNeo
-  alias Relive.Audio.Buffer
 
   alias Membrane.Audiometer.Peakmeter
-  # alias Membrane.FFmpeg.SWResample
+  alias Membrane.FFmpeg.SWResample
   alias Membrane.PortAudio
 
   require Logger
@@ -40,44 +38,32 @@ defmodule Relive.Audio.Pipeline do
     {[spec: spec], %{amps: %{peak_1: [], peak_2: []}, clock_started?: false}}
   end
 
+  @chunk_ms 200
   defp children(:default, opts) do
     peaks_per_second = Keyword.get(opts, :peaks_per_second, @default_peaks_per_second)
 
     peak_interval =
       round(1000 / peaks_per_second)
 
-    # child(:source, %Membrane.File.Source{
-    #   location: "./beamrad.mp3"
-    # })
-    # |> child(:decoder, Membrane.MP3.MAD.Decoder)
-    # |> child(:converter, %SWResample.Converter{
-    #   output_stream_format: %Membrane.RawAudio{
-    #     sample_format: :f32le,
-    #     sample_rate: 16000,
-    #     channels: 1
-    #   }
-    # })
-
     child(:source, %PortAudio.Source{
       channels: 1,
       # sample_format: :s16le,
       sample_format: :f32le,
       sample_rate: 16000,
-      portaudio_buffer_size: 1600
+      portaudio_buffer_size: VAD.mono_samples(@chunk_ms)
     })
     |> child(:peak_1, %Peakmeter{
       # We set this interval to ensure a reasonable pace of notifications
       interval: Membrane.Time.milliseconds(peak_interval)
     })
-    |> child(:vad, %VADNeo{chunk_tolerance: 2, chunk_ms: 200, max_chunks: 100})
+    |> child(:vad, %VAD{chunk_tolerance: 2, chunk_ms: @chunk_ms, max_chunks: 100})
     |> child(:peak_2, %Peakmeter{
       interval: Membrane.Time.milliseconds(peak_interval)
     })
-    # |> child(:buffer, %Buffer{duration_ms: 30000, })
     |> child(:transcribe, %Relive.Audio.Whisper{serving: Relive.Whisper})
     |> child(:assistant, %Relive.LLM{serving: Relive.LLM})
     |> child(:voice, Relive.Audio.Kokoro)
-    |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
+    |> child(:converter, %SWResample.Converter{
       input_stream_format: %Membrane.RawAudio{
         sample_format: :f32le,
         sample_rate: 24000,
@@ -93,39 +79,6 @@ defmodule Relive.Audio.Pipeline do
     # |> child(:output, %Membrane.File.Sink{location: "file.pcm"})
 
     |> child(:output, Membrane.PortAudio.Sink)
-  end
-
-  defp children(:try, _opts) do
-    child(:source, %PortAudio.Source{
-      channels: 1,
-      # sample_format: :s16le,
-      sample_format: :f32le,
-      sample_rate: 16000,
-      portaudio_buffer_size: 1600
-    })
-    |> child(:buffer, %Relive.Audio.Buffer{duration_ms: 1000})
-    |> child(:transcribe, %Relive.Audio.Whisper{serving: Relive.Whisper})
-    # |> child(:output, Membrane.Fake.Sink.Buffers)
-
-    |> child(:voice, Relive.Audio.Kokoro)
-    |> child(:converter, %Membrane.FFmpeg.SWResample.Converter{
-      input_stream_format: %Membrane.RawAudio{
-        sample_format: :f32le,
-        sample_rate: 24000,
-        channels: 1
-      },
-      output_stream_format: %Membrane.RawAudio{
-        sample_format: :f32le,
-        sample_rate: 16000,
-        channels: 1
-      }
-    })
-    # Stream data into PortAudio to play it on speakers.
-    # |> child(:output, %Membrane.File.Sink{location: "file.pcm"})
-
-    |> child(:output, Membrane.PortAudio.Sink)
-
-    # |> child(:output, Membrane.Fake.Sink)
   end
 
   @impl true
@@ -164,8 +117,8 @@ defmodule Relive.Audio.Pipeline do
 
   # We just ignore audiometer underruns, they are not terribly exciting
   def handle_child_notification(
-        {:audiometer, other},
-        element,
+        {:audiometer, _other},
+        _element,
         _context,
         state
       ) do
@@ -174,7 +127,7 @@ defmodule Relive.Audio.Pipeline do
   end
 
   def handle_child_notification(
-        notification,
+        _notification,
         _element,
         _context,
         state
