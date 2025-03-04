@@ -83,5 +83,6 @@ config :phoenix_live_view,
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+# config :nx, :default_backend, EXLA.Backend
 config :nx, :default_backend, {EMLX.Backend, device: :gpu}
 # config :nx, :default_backend, {EMLX.Backend, device: :cpu}

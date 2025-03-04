@@ -10,7 +10,7 @@ defmodule Relive.Application do
       {Finch, name: Relive.Finch},
       Audio.Supervisor,
       {Serving, serving: Audio.Whisper.serving("base"), name: Relive.Whisper, batch_timeout: 200},
-      {Serving, serving: Relive.LLM.serving(0.6), name: Relive.LLM, batch_timeout: 200},
+      # {Serving, serving: Relive.LLM.serving(0.6), name: Relive.LLM, batch_timeout: 200},
       ReliveWeb.Endpoint
     ]
 

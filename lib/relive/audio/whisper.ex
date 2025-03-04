@@ -63,11 +63,27 @@ defmodule Relive.Audio.Whisper do
       %{chunks: chunks} = transcribe!(state.opts.serving, audio)
       # Logger.info("Chunks: #{inspect(chunks, pretty: true)}")
       text = to_raw_text(chunks)
-      new_buffer = %Membrane.Buffer{payload: text}
-      {[notify_parent: {:transcript, text}, buffer: {:output, new_buffer}], state}
+
+      if is_common_madness(text) do
+        {[], state}
+      else
+        new_buffer = %Membrane.Buffer{payload: text}
+        {[notify_parent: {:transcript, text}, buffer: {:output, new_buffer}], state}
+      end
     else
       # #Logger.info("Silence...")
       {[], state}
+    end
+  end
+
+  defp is_common_madness(text) do
+    text
+    |> String.trim()
+    |> String.downcase()
+    |> case do
+      "you" -> true
+      "thank you" -> true
+      _ -> false
     end
   end
 
