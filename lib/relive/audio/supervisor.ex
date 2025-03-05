@@ -27,8 +27,11 @@ defmodule Relive.Audio.Supervisor do
         opts = opts_from_variant(variant)
         DynamicSupervisor.start_child(__MODULE__, {Relive.Audio.Pipeline, opts})
 
-      [{_, child, _, _}] ->
-        DynamicSupervisor.terminate_child(__MODULE__, child)
+      multiple ->
+        Enum.each(multiple, fn {_, child, _, _} ->
+          DynamicSupervisor.terminate_child(__MODULE__, child)
+        end)
+
         opts = opts_from_variant(variant)
         DynamicSupervisor.start_child(__MODULE__, {Relive.Audio.Pipeline, opts})
     end

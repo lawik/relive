@@ -94,25 +94,34 @@ defmodule ReliveWeb.BaseLive do
         label = elem(child, 0)
         spec = elem(child, 1)
 
-        struct =
+        {type, struct} =
           case spec do
             spec when is_struct(spec) ->
-              spec
-              |> Map.from_struct()
+              {spec.__struct__, Map.from_struct(spec)}
 
             spec when is_atom(spec) ->
               try do
-                struct(spec) |> Map.from_struct()
+                {spec, struct(spec) |> Map.from_struct()}
               rescue
-                _ -> %{}
+                _ -> {:unknown, %{}}
               end
           end
+
+        struct =
+          struct
           |> Enum.filter(fn {_key, value} ->
             is_integer(value) or is_float(value) or is_binary(value)
           end)
           |> Map.new()
 
-        %{label: label, spec: struct}
+        type =
+          type
+          |> to_string()
+          |> String.replace("Elixir.", "")
+          |> String.replace("Membrane.", "")
+          |> String.replace("Relive.Audio.", "")
+
+        %{label: label, spec: struct, type: type}
       end)
 
     socket
@@ -150,34 +159,35 @@ defmodule ReliveWeb.BaseLive do
     </div>
 
     <div class="relative" style="z-index: 100;">
-      <div class="flex gap-4 text-sm p-4">
-        <form
-          id="variants"
-          phx-change="switch-pipeline"
-          class="inline-block bg-slate-800 rounded-md px-2 py-2"
-        >
-          <label class="text-sm text-slate-200">
-            Pipeline:
-            <select
-              id="variant"
-              name="variant"
-              class="mx-2 border-0 rounded-md text-sm bg-slate-600 text-slate-100"
+      <form id="variants" phx-change="switch-pipeline" class="m-4 bg-slate-800 rounded-md px-2 py-2">
+        <label class="text-sm text-slate-200">
+          Pipeline:
+          <select
+            id="variant"
+            name="variant"
+            class="mx-2 border-0 rounded-md text-sm bg-slate-600 text-slate-100"
+          >
+            <option
+              :for={variant <- @variants}
+              selected={variant == @variant}
+              value={to_string(variant)}
             >
-              <option
-                :for={variant <- @variants}
-                selected={variant == @variant}
-                value={to_string(variant)}
-              >
-                {String.replace(String.capitalize(to_string(variant)), "_", " ")}
-              </option>
-            </select>
-          </label>
-        </form>
+              {String.replace(String.capitalize(to_string(variant)), "_", " ")}
+            </option>
+          </select>
+        </label>
+      </form>
+      <div class="flex gap-4 text-sm p-4">
         <form
           :for={child <- @children |> Enum.reverse()}
           class="bg-slate-600 rounded-md px-2 py-1 grow"
         >
-          <h2 class="mb-2 text-slate-200">{child.label}</h2>
+          <h2 class="mb-2 text-slate-200">
+            {child.label}
+            <div class="text-slate-200">
+              {child.type}
+            </div>
+          </h2>
           <ul class="text-slate-300">
             <li :for={{key, value} <- child.spec}>
               <div>{key}</div>

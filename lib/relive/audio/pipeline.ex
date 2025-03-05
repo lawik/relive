@@ -54,7 +54,7 @@ defmodule Relive.Audio.Pipeline do
     })
     |> child(:transcribe, %Relive.Audio.Whisper{serving: Relive.Whisper})
     |> child(:assistant, %Relive.LLM{serving: Relive.LLM, system_prompt: system_prompt})
-    |> child(:voice, Relive.Audio.Kokoro)
+    |> child(:voice, %Relive.Audio.Kokoro{})
     |> child(:converter, %SWResample.Converter{
       input_stream_format: %Membrane.RawAudio{
         sample_format: :f32le,
@@ -161,7 +161,7 @@ defmodule Relive.Audio.Pipeline do
       interval: Membrane.Time.milliseconds(peak_interval)
     })
     |> child(:transcribe, %Relive.Audio.Whisper{serving: Relive.Whisper})
-    |> child(:voice, Relive.Audio.Kokoro)
+    |> child(:voice, %Relive.Audio.Kokoro{})
     |> child(:converter, %SWResample.Converter{
       input_stream_format: %Membrane.RawAudio{
         sample_format: :f32le,
@@ -195,7 +195,7 @@ defmodule Relive.Audio.Pipeline do
       interval: Membrane.Time.milliseconds(peak_interval)
     })
     |> child(:transcribe, %Relive.Audio.Whisper{serving: Relive.Whisper})
-    |> child(:voice, Relive.Audio.Kokoro)
+    |> child(:voice, %Relive.Audio.Kokoro{})
     |> child(:converter, %SWResample.Converter{
       input_stream_format: %Membrane.RawAudio{
         sample_format: :f32le,

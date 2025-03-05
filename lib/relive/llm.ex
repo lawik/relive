@@ -74,7 +74,7 @@ defmodule Relive.LLM do
 
     generation_config =
       Bumblebee.configure(generation_config,
-        max_new_tokens: 50,
+        max_new_tokens: 100,
         strategy: %{type: :multinomial_sampling, top_p: top_p}
       )
 
@@ -104,10 +104,7 @@ defmodule Relive.LLM do
     IO.puts("LLM warmed up.")
   end
 
-  @system_prompt """
-  You are a friendly assistant. Not good for anything but happy to hold a conversation.
-  """
-  defp prompt(exchange, system_prompt \\ @system_prompt) do
+  defp prompt(exchange, system_prompt) do
     IO.puts("Exchange:")
 
     exchange
@@ -121,6 +118,7 @@ defmodule Relive.LLM do
     text =
       exchange
       |> Enum.reverse()
+      |> Enum.take(4)
       |> Enum.map(fn {actor, text} ->
         """
         <|im_start|>#{actor}
@@ -132,7 +130,7 @@ defmodule Relive.LLM do
 
     """
     <|im_start|>system
-    #{@system_prompt}
+    #{system_prompt}
     <|im_end|>
     #{text}
     <|im_start|>assistant

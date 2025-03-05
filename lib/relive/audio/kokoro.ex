@@ -12,6 +12,14 @@ defmodule Relive.Audio.Kokoro do
     channels: 1
   }
 
+  def_options(
+    voice: [
+      spec: String.t(),
+      description: "Voice to use. Not implemented.",
+      default: ""
+    ]
+  )
+
   def_input_pad(:input,
     availability: :always,
     flow_control: :manual,
