@@ -18,8 +18,8 @@ defmodule Relive.Application do
     result = Supervisor.start_link(children, opts)
 
     # Give whisper a job to ensure it gets fully loaded
-    Audio.Whisper.warmup()
-    Relive.LLM.warmup()
+    # Audio.Whisper.warmup()
+    # Relive.LLM.warmup()
     result
   end
 

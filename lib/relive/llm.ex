@@ -6,6 +6,10 @@ defmodule Relive.LLM do
   require Logger
 
   def_options(
+    system_prompt: [
+      spec: String.t(),
+      description: "The system prompt for the assistant."
+    ],
     serving: [
       spec: atom() | pid(),
       description: "Which serving to use for generating text."
@@ -55,11 +59,11 @@ defmodule Relive.LLM do
         state
       ) do
     state = %{state | exchange: [{:user, text} | state.exchange]}
-    %{results: chunks} = generate(state.opts.serving, state.exchange)
+    %{results: chunks} = generate(state.opts.serving, state.exchange, state.opts.system_prompt)
     out_text = to_raw_text(chunks)
     state = %{state | exchange: [{:assistant, out_text} | state.exchange]}
     new_buffer = %Membrane.Buffer{payload: out_text}
-    {[notify_parent: {:assistant, out_text}, buffer: {:output, new_buffer}], state}
+    {[notify_parent: {:assistant, state.exchange}, buffer: {:output, new_buffer}], state}
   end
 
   @repo {:hf, "HuggingFaceTB/SmolLM2-135M-Instruct"}
@@ -70,7 +74,7 @@ defmodule Relive.LLM do
 
     generation_config =
       Bumblebee.configure(generation_config,
-        max_new_tokens: 256,
+        max_new_tokens: 50,
         strategy: %{type: :multinomial_sampling, top_p: top_p}
       )
 
@@ -83,10 +87,10 @@ defmodule Relive.LLM do
     )
   end
 
-  def generate(name, exchange) do
+  def generate(name, exchange, system_prompt) do
     {t, output} =
       :timer.tc(fn ->
-        Nx.Serving.batched_run(name, prompt(exchange))
+        Nx.Serving.batched_run(name, prompt(exchange, system_prompt))
         |> IO.inspect(label: "Result text")
       end)
 
@@ -96,14 +100,24 @@ defmodule Relive.LLM do
 
   def warmup do
     IO.puts("Warming up LLM...")
-    generate(Relive.LLM, [{:user, ""}])
+    generate(Relive.LLM, [{:user, ""}], "")
     IO.puts("LLM warmed up.")
   end
 
   @system_prompt """
   You are a friendly assistant. Not good for anything but happy to hold a conversation.
   """
-  defp prompt(exchange) do
+  defp prompt(exchange, system_prompt \\ @system_prompt) do
+    IO.puts("Exchange:")
+
+    exchange
+    |> Enum.reverse()
+    |> Enum.map(fn {actor, text} ->
+      "#{actor}: #{text}"
+    end)
+    |> Enum.join("\n")
+    |> IO.puts()
+
     text =
       exchange
       |> Enum.reverse()
@@ -123,7 +137,6 @@ defmodule Relive.LLM do
     #{text}
     <|im_start|>assistant
     """
-    |> IO.inspect(label: "prompt")
   end
 
   defp to_raw_text(chunks) do

@@ -76,6 +76,13 @@ defmodule Relive.Audio.Kokoro do
 
     Logger.info("#{text}")
 
+    text =
+      if is_list(text) do
+        text
+      else
+        [text]
+      end
+
     actions =
       text
       |> Enum.map(fn chunk ->
