@@ -133,64 +133,10 @@ defmodule ReliveWeb.BaseLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="relative" style="z-index: 100;">
-      <form id="variants" phx-change="switch-pipeline" class="p-4">
-        <label>
-          Pipeline:
-          <select id="variant" name="variant">
-            <option :for={variant <- @variants} selected={variant == @variant}>
-              {String.capitalize(to_string(variant))}
-            </option>
-          </select>
-        </label>
-      </form>
-
-      <div class="flex gap-4 text-sm p-4">
-        <form
-          :for={child <- @children |> Enum.reverse()}
-          class="bg-slate-200 rounded-md px-2 py-1 opacity-80"
-        >
-          <h2 class="mb-2">{child.label}</h2>
-          <ul class="text-slate-500">
-            <li :for={{key, value} <- child.spec}>
-              <div>{key}</div>
-              <div>{value}</div>
-            </li>
-          </ul>
-          <%!-- <pre>
-      { inspect(child.spec, pretty: true) }
-      </pre> --%>
-        </form>
-      </div>
-
-      <%!-- <div id="speech">{@status}</div> --%>
-      <%!-- <div :for={{element, amp} <- @last_amp}>
-        <strong>{element}</strong> {Float.round(amp, 1)}
-      </div> --%>
-      <div :if={assigns[:latest_transcript]} class="p-4">
-        <div class="p-2 rounded-md bg-slate-200">
-          <p>{assigns[:latest_transcript]}</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="p-4 absolute bottom-0 z-20 flex flex-wrap overflow-hidden">
-      <div
-        :for={{party, text} <- @exchange}
-        :if={party != :system}
-        class={"w-1/2 rounded-lg mb-16 p-2 " <> if party == :user do "bg-emerald-200 text-emerald-900" else "-translate-x-16 translate-y-12 bg-purple-200 text-purple-900" end}
-      >
-        <span class={"block " <> if party == :user do "text-emerald-700" else "text-purple-700" end}>
-          {party}
-        </span>
-        <span class="">{text}</span>
-      </div>
-    </div>
-
     <div id="peaks-1" class="absolute top-0 left-0 w-screen z-10">
       <div
         :for={amp <- @waveform}
-        class="bg-sky-200 h-[1vh]"
+        class="bg-sky-600 h-[1vh]"
         style={"transform: scale(#{amp_percent(amp)}, 1.0)"}
       >
       </div>
@@ -198,9 +144,68 @@ defmodule ReliveWeb.BaseLive do
 
     <div
       id="speaks"
-      class={"absolute top-0 left-0 w-screen h-full z-10 pointer-events-none transition " <> if @status == :speaking do "opacity-100" else "opacity-0" end}
-      style="background-image: radial-gradient(rgba(0,170,255,0.0) 0%, rgba(0,170,255,0.5) 100%);"
+      class={"absolute top-0 left-0 w-screen h-full z-8 pointer-events-none transition " <> if @status == :speaking do "opacity-100" else "opacity-0" end}
+      style="background-image: radial-gradient(rgba(0,255,170,0.0) 50%, rgba(0,255,170,0.5) 100%);"
     >
+    </div>
+
+    <div class="relative" style="z-index: 100;">
+      <div class="flex gap-4 text-sm p-4">
+        <form
+          id="variants"
+          phx-change="switch-pipeline"
+          class="inline-block bg-slate-800 rounded-md px-2 py-2"
+        >
+          <label class="text-sm text-slate-200">
+            Pipeline:
+            <select
+              id="variant"
+              name="variant"
+              class="mx-2 border-0 rounded-md text-sm bg-slate-600 text-slate-100"
+            >
+              <option
+                :for={variant <- @variants}
+                selected={variant == @variant}
+                value={to_string(variant)}
+              >
+                {String.replace(String.capitalize(to_string(variant)), "_", " ")}
+              </option>
+            </select>
+          </label>
+        </form>
+        <form
+          :for={child <- @children |> Enum.reverse()}
+          class="bg-slate-600 rounded-md px-2 py-1 grow"
+        >
+          <h2 class="mb-2 text-slate-200">{child.label}</h2>
+          <ul class="text-slate-300">
+            <li :for={{key, value} <- child.spec}>
+              <div>{key}</div>
+              <div>{value}</div>
+            </li>
+          </ul>
+        </form>
+      </div>
+    </div>
+
+    <div class="mx-12 my-4 absolute bottom-0 z-20 flex flex-wrap overflow-hidden">
+      <div
+        :for={{party, text} <- @exchange}
+        :if={party != :system}
+        class={"w-1/2 rounded-lg mb-16 p-2 " <> if party == :user do "bg-emerald-200 text-emerald-900 pr-12 " else "-translate-x-8 translate-y-12 bg-purple-200 text-purple-900" end}
+      >
+        <span class={"block " <> if party == :user do "text-emerald-700" else "text-purple-700" end}>
+          {party}
+        </span>
+        <span class="">{text}</span>
+      </div>
+      <div
+        :if={assigns[:latest_transcript]}
+        class="w-full rounded-lg mb-2 p-2 bg-sky-200 text-teal-900 pr-12"
+      >
+        <span class="block text-teal-700">latest transcript</span>
+        <span class="">{assigns[:latest_transcript]}</span>
+      </div>
     </div>
     """
   end
