@@ -44,7 +44,7 @@ defmodule Relive.MixProject do
       # {:membrane_core, path: "../membrane_core", override: true},
       {:kokoro, [github: "lawik/kokoro", branch: "fix-concatenation", override: true]},
       {:ortex, "~> 0.1"},
-      # {:exla, "~> 0.9"},
+      {:exla, "~> 0.9"},
       {:bumblebee, "~> 0.6"},
       {:nx, "~> 0.9"},
       {:emlx, github: "elixir-nx/emlx", branch: "main"},
