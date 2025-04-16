@@ -93,11 +93,20 @@ defmodule Relive.Audio.Whisper do
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, "openai/whisper-#{model}"})
     {:ok, generation_config} = Bumblebee.load_generation_config({:hf, "openai/whisper-#{model}"})
 
-    Bumblebee.Audio.speech_to_text_whisper(whisper, featurizer, tokenizer, generation_config,
-      # defn_options: [compiler: EXLA],
-      task: :transcribe,
-      language: "en"
-    )
+    case :os.type() do
+      {:unix, :darwin} ->
+        Bumblebee.Audio.speech_to_text_whisper(whisper, featurizer, tokenizer, generation_config,
+          task: :transcribe,
+          language: "en"
+        )
+
+      _ ->
+        Bumblebee.Audio.speech_to_text_whisper(whisper, featurizer, tokenizer, generation_config,
+          defn_options: [compiler: EXLA],
+          task: :transcribe,
+          language: "en"
+        )
+    end
   end
 
   def warmup do
